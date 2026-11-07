@@ -753,7 +753,9 @@ define([
         }, this);
     };
 
-    FaceHandler.prototype.onRead = function (diy, ois) {
+    // Brings a card that was read up to date; readPortraits() gets its
+    // portraits after the settings upgrades and before the art upgrade.
+    FaceHandler.prototype.finishRead = function (diy, readPortraits) {
         this.upgrade(diy);
         // an older save lacks the settings the faces added since
         if (diy.version < this.version) {
@@ -764,10 +766,7 @@ define([
         }
 
         this.updateCollector(diy);
-        var legacy =
-            diy.version < this.version ? this.legacyPortraits(diy) : null;
-        if (legacy != null) this.readLegacyPortraits(diy, ois, legacy);
-        else this.readPortraits(diy, ois);
+        readPortraits.call(this);
         if (diy.version < this.version && this.config.upgradeArt)
             this.config.upgradeArt(diy, this.art);
 
@@ -775,11 +774,33 @@ define([
         diy.version = this.version;
     };
 
+    FaceHandler.prototype.onRead = function (diy, ois) {
+        this.finishRead(diy, function () {
+            var legacy =
+                diy.version < this.version ? this.legacyPortraits(diy) : null;
+            if (legacy != null) this.readLegacyPortraits(diy, ois, legacy);
+            else this.readPortraits(diy, ois);
+        });
+    };
+
     FaceHandler.prototype.onWrite = function (diy, oos) {
         this.allPortraits().forEach(function (portrait) {
             oos.writeObject(portrait);
         });
     };
+
+    // Text saves: Strange Eons restores the settings and portraits, so only
+    // the sets are matched to the user's sets.
+    FaceHandler.prototype.onReadData = function (diy) {
+        this.finishRead(diy, function () {
+            this.portraitKinds.forEach(function (kind, i) {
+                Collector.update(diy, kind, this.portraits[i]);
+            }, this);
+        });
+    };
+
+    // everything a card keeps is in its settings and portraits
+    FaceHandler.prototype.onWriteData = function () {};
 
     return FaceHandler;
 });

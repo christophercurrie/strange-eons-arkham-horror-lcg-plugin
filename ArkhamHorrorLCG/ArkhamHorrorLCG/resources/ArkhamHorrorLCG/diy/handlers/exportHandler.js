@@ -17,6 +17,8 @@ define([], function () {
         'onClear',
         'onRead',
         'onWrite',
+        'onReadData',
+        'onWriteData',
         'getPortraitCount',
         'getPortrait',
     ];

@@ -165,11 +165,19 @@ define(['handlers/FaceHandler', 'se/strings', 'se/ui', 'se/java'], function (
     // An older save's choices are upgraded before its faces are applied; the
     // other upgrades see those faces.
     FaceChoiceHandler.prototype.onRead = function (diy, ois) {
+        this.prepareRead(diy);
+        FaceHandler.prototype.onRead.call(this, diy, ois);
+    };
+
+    FaceChoiceHandler.prototype.onReadData = function (diy, data) {
+        this.prepareRead(diy);
+        FaceHandler.prototype.onReadData.call(this, diy, data);
+    };
+
+    FaceChoiceHandler.prototype.prepareRead = function (diy) {
         this.component = diy;
         if (diy.version < this.version) this.upgradeChoices(diy);
         this.applyFaceSettings(diy);
-
-        FaceHandler.prototype.onRead.call(this, diy, ois);
     };
 
     // Subclasses may override upgradeChoices( diy ) to set the face settings
