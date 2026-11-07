@@ -57,7 +57,15 @@ class TeeOutputStream(private val console: java.io.OutputStream, private val log
 
 // Runs the fixture script in Strange Eons with the packaged plug-in. Script
 // errors that Strange Eons reports and recovers from fail the task.
-fun Exec.runFixtureScript(mode: String, out: File, work: File, overwrite: Boolean = false, flexibleOut: File = out) {
+fun Exec.runFixtureScript(
+    mode: String,
+    out: File,
+    work: File,
+    overwrite: Boolean = false,
+    flexibleOut: File = out,
+    input: File? = null,
+    flexibleInput: File? = null,
+) {
     val buildSe = tasks.named<BuildStrangeEons>("buildStrangeEons")
     val pack = tasks.named<PackagePluginFolder>("packagePluginFolder")
     dependsOn(buildSe, pack)
@@ -83,6 +91,8 @@ fun Exec.runFixtureScript(mode: String, out: File, work: File, overwrite: Boolea
             "-Dfx.results=${work.resolve("results.txt").absolutePath}",
             "-Dfx.overwrite=$overwrite",
             "-Dfx.amdScript=${amdScript.absolutePath}",
+            "-Dfx.in=${input?.absolutePath ?: ""}",
+            "-Dfx.flexibleIn=${flexibleInput?.absolutePath ?: ""}",
             "-cp", cp,
             "ca.cgjennings.apps.arkham.StrangeEons",
             "--xDisableJreCheck", "--xDisablePluginLoading",
@@ -272,7 +282,7 @@ fun registerFlexibleRenders(
     mode: String,
     mastersDir: String,
     verifyTask: String,
-    updateTask: String,
+    updateTask: String?,
     configure: RenderComponents.() -> Unit,
 ) {
     val outDir = "render-test/flexible$name"
@@ -313,6 +323,7 @@ fun registerFlexibleRenders(
         javaRuntimeVersion = strangeEonsRenderTest.launcher.map { it.metadata.javaRuntimeVersion }
         diffs = layout.buildDirectory.dir("$outDir/diffs")
     }
+    if (updateTask == null) return
     val recorded = tasks.register<Sync>("selectFlexible${title}Masters") {
         flexibleMastersFrom(render.flatMap { it.outputDir })
         into(layout.buildDirectory.dir("$outDir/recorded"))
@@ -338,6 +349,71 @@ registerFlexibleRenders(
     "verifyFlexibleInkSaver", "updateFlexibleInkSaverMasters",
 ) {
     userSettings.put("render-as-prototype", "yes")
+}
+
+// The fixtures copied through a save and read as text: each card whose handler
+// supports it is saved as .eont, read back and saved as .eon, then rendered
+// against the same masters.
+val textRoundTrip = layout.buildDirectory.dir("render-test/text-round-trip")
+val convertFixturesThroughText by tasks.registering(Exec::class) {
+    group = "render test"
+    description = "Copies the render-test fixtures through a save and read as text."
+    val root = textRoundTrip.get().asFile
+    val components = file("src/renderTest/components")
+    val flexible = file("src/renderTest/flexible")
+    inputs.dir(components)
+    inputs.dir(flexible)
+    outputs.dir(root.resolve("components"))
+    outputs.dir(root.resolve("flexible"))
+    doFirst {
+        root.resolve("components").deleteRecursively()
+        root.resolve("flexible").deleteRecursively()
+    }
+    runFixtureScript(
+        "text", root.resolve("components"), root.resolve("work"),
+        flexibleOut = root.resolve("flexible"), input = components, flexibleInput = flexible,
+    )
+}
+val renderTextRoundTrip by tasks.registering(RenderComponents::class) {
+    group = "render test"
+    description = "Renders the fixtures after a save and read as text."
+    dependsOn(convertFixturesThroughText)
+    val defaults = tasks.named<RenderComponents>("renderComponents").get()
+    applicationClasspath.from(defaults.applicationClasspath)
+    bundles.from(defaults.bundles)
+    components = textRoundTrip.map { it.dir("components") }
+    resolution = strangeEonsRenderTest.resolution
+    gameLanguage = strangeEonsRenderTest.gameLanguage
+    uiLanguage = strangeEonsRenderTest.uiLanguage
+    jvmArgs = strangeEonsRenderTest.jvmArgs
+    userSettings = strangeEonsRenderTest.userSettings
+    renderBacks = strangeEonsRenderTest.renderBacks
+    launcher = strangeEonsRenderTest.launcher
+    outputDir = textRoundTrip.map { it.dir("actual") }
+    workDir = textRoundTrip.map { it.dir("render-work") }
+}
+val verifyTextRoundTrip by tasks.registering(VerifyRenders::class) {
+    group = "render test"
+    description = "Fails if any render after a save and read as text differs from this platform's masters."
+    actual = renderTextRoundTrip.flatMap { it.outputDir }
+    mastersRoot = strangeEonsRenderTest.masters
+    platformMasters = strangeEonsRenderTest.masters.dir(flexiblePlatform)
+    platform = flexiblePlatform
+    javaVendor = strangeEonsRenderTest.launcher.map { it.metadata.vendor }
+    javaRuntimeVersion = strangeEonsRenderTest.launcher.map { it.metadata.javaRuntimeVersion }
+    diffs = textRoundTrip.map { it.dir("diffs") }
+}
+registerFlexibleRenders(
+    "-text", "Text", " after a save and read as text", "src/renderTest/flexible-masters",
+    "verifyFlexibleTextRoundTrip", null,
+) {
+    dependsOn(convertFixturesThroughText)
+    components = textRoundTrip.map { it.dir("flexible") }
+}
+tasks.register("verifyTextRoundTrips") {
+    group = "render test"
+    description = "Fails if any fixture renders differently after a save and read as text."
+    dependsOn(verifyTextRoundTrip, "verifyFlexibleTextRoundTrip")
 }
 
 val defaultsDump = layout.buildDirectory.dir("render-test/defaults/actual")
@@ -402,6 +478,6 @@ tasks.named("check") { dependsOn(verifyDefaults, "verifyFlexibleRenders", "verif
 listOf(
     RenderComponents::class, VerifyRenders::class, UpdateRenderMasters::class, StageFlexibleRenders::class,
 ).forEach { type -> tasks.withType(type).configureEach { dependsOn(checkRenderTestSources) } }
-listOf(generateFixtures, dumpDefaults, verifyDefaults, updateDefaults).forEach {
+listOf(generateFixtures, dumpDefaults, verifyDefaults, updateDefaults, convertFixturesThroughText).forEach {
     it.configure { dependsOn(checkRenderTestSources) }
 }
