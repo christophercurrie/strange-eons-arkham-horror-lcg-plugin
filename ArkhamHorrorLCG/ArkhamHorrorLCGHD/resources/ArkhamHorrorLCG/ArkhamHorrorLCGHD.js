@@ -5,8 +5,20 @@ function getName() {
 function getDescription() {
 	return 'HD templates for the Arkham Horror LCG plugin';
 }
+var seVersion;
+// the build's version as SE compares it: 10.0.0-SNAPSHOT is 10.0
 function getVersion() {
-	return 9.96;
+	if (seVersion === undefined) {
+		var props = new java.util.Properties();
+		var input = ResourceKit.getInputStream('ArkhamHorrorLCG/version-hd.properties');
+		try {
+			props.load(input);
+		} finally {
+			input.close();
+		}
+		seVersion = parseFloat(String(props.getProperty('se-version')));
+	}
+	return seVersion;
 }
 
 function initialize() {

@@ -6,6 +6,7 @@ import org.strangeeons.gradle.rendertest.VerifyRenders
 
 plugins {
     id("org.strangeeons.render-test") version "1.0.1"
+    id("net.researchgate.release") version "3.2.0"
 }
 
 val projects = "${System.getProperty("user.home")}/Projects"
@@ -20,8 +21,41 @@ strangeEonsRenderTest {
     resolution = 300
 }
 
+release {
+    preTagCommitMessage = "chore: release"
+    newVersionCommitMessage = "chore: start"
+    git {
+        // Review the release commits and tag, then push with --follow-tags.
+        pushToRemote = false
+    }
+}
+
+// SE plug-in versions are floats: 10.0.0-SNAPSHOT is 10.0. Minors are one
+// digit so that 10.10 can't read as 10.1.
+fun seVersion(version: String): String {
+    val m = Regex("""(\d+)\.(\d)\.\d+(-SNAPSHOT)?""").matchEntire(version)
+        ?: throw GradleException("Version $version is not major.minor.patch[-SNAPSHOT] with a one-digit minor")
+    return "${m.groupValues[1]}.${m.groupValues[2]}"
+}
+
+// The plug-in scripts read their version from these files.
+fun writePluginVersion(name: String, file: String) = tasks.register<WriteProperties>(name) {
+    description = "Writes the plug-in version for the scripts to read."
+    destinationFile = file(file)
+    property("version", project.version.toString())
+    property("se-version", seVersion(project.version.toString()))
+}
+
+val baseVersionFile = "ArkhamHorrorLCG/ArkhamHorrorLCG/resources/ArkhamHorrorLCG/version.properties"
+val hdVersionFile = "ArkhamHorrorLCG/ArkhamHorrorLCGHD/resources/ArkhamHorrorLCG/version-hd.properties"
+val writeBaseVersion = writePluginVersion("writeBaseVersion", baseVersionFile)
+val writeHdVersion = writePluginVersion("writeHdVersion", hdVersionFile)
+
+tasks.named("packagePluginFolder") { dependsOn(writeBaseVersion) }
+
 val packageHdPluginFolder by tasks.registering(PackagePluginFolder::class) {
     description = "Packages the HD templates plug-in folder into a bundle."
+    dependsOn(writeHdVersion)
     folder = file("ArkhamHorrorLCG/ArkhamHorrorLCGHD")
     bundle = layout.buildDirectory.file("bundles/ArkhamHorrorLCGHD.seext")
 }
@@ -36,6 +70,40 @@ val bundles by tasks.registering(Sync::class) {
 }
 
 tasks.named("assemble") { dependsOn(bundles) }
+
+val verifyPluginVersions by tasks.registering {
+    group = "verification"
+    description = "Checks version parsing and the version files in each bundle."
+    val dist = bundles.map { it.destinationDir }
+    val version = project.version.toString()
+    inputs.files(bundles)
+    doLast {
+        mapOf("10.0.0" to "10.0", "10.1.0-SNAPSHOT" to "10.1", "9.9.12" to "9.9").forEach { (v, se) ->
+            check(seVersion(v) == se) { "seVersion($v) is ${seVersion(v)}, expected $se" }
+        }
+        listOf("10.0", "10.10.0", "10.0.0-rc1", "v10.0.0").forEach { v ->
+            check(runCatching { seVersion(v) }.isFailure) { "seVersion($v) should fail" }
+        }
+        val expected = mapOf("version" to version, "se-version" to seVersion(version))
+        mapOf(
+            "ArkhamHorrorLCG.seext" to "resources/ArkhamHorrorLCG/version.properties",
+            "ArkhamHorrorLCGHD.seext" to "resources/ArkhamHorrorLCG/version-hd.properties",
+        ).forEach { (bundle, entry) ->
+            val bytes = dist.get().resolve(bundle).readBytes()
+            // skip SE's 4-byte web-safe header; SE strips it from bundles it
+            // loads, so render tests leave the base bundle without one
+            val start = if (bytes[0] == 0x07.toByte() && bytes[1] == 0x88.toByte()) 4 else 0
+            java.util.zip.ZipInputStream(bytes.inputStream(start, bytes.size - start)).use { zip ->
+                val found = generateSequence { zip.nextEntry }.firstOrNull { it.name == entry }
+                    ?: throw GradleException("$bundle has no $entry")
+                val actual = java.util.Properties().apply { load(zip) }.toMap()
+                check(actual == expected) { "$bundle $entry is $actual, expected $expected" }
+            }
+        }
+    }
+}
+
+tasks.named("check") { dependsOn(verifyPluginVersions) }
 
 val fixtureScript = file("src/renderTest/generate-fixtures.js")
 val amdScript = file("src/renderTest/amd-loader.js")
@@ -100,6 +168,7 @@ fun Exec.runFixtureScript(mode: String, out: File, work: File, overwrite: Boolea
             "-Dfx.results=${work.resolve("results.txt").absolutePath}",
             "-Dfx.overwrite=$overwrite",
             "-Dfx.amdScript=${amdScript.absolutePath}",
+            "-Dfx.version=${seVersion(project.version.toString())}",
             "-cp", cp,
             "ca.cgjennings.apps.arkham.StrangeEons",
             "--xDisableJreCheck", "--xDisablePluginLoading",
