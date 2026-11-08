@@ -5,7 +5,7 @@ import org.strangeeons.gradle.rendertest.UpdateRenderMasters
 import org.strangeeons.gradle.rendertest.VerifyRenders
 
 plugins {
-    id("org.strangeeons.render-test") version "1.0.1"
+    id("org.strangeeons.render-test") version "1.0.2"
 }
 
 val projects = "${System.getProperty("user.home")}/Projects"
@@ -351,13 +351,12 @@ registerFlexibleRenders(
     userSettings.put("render-as-prototype", "yes")
 }
 
-// The fixtures copied through a save and read as text: each card whose handler
-// supports it is saved as .eont, read back and saved as .eon, then rendered
-// against the same masters.
+// The fixtures copied through a save as text: each .eon whose card supports it
+// is saved as .eont and rendered from that against the same masters.
 val textRoundTrip = layout.buildDirectory.dir("render-test/text-round-trip")
 val convertFixturesThroughText by tasks.registering(Exec::class) {
     group = "render test"
-    description = "Copies the render-test fixtures through a save and read as text."
+    description = "Copies the render-test fixtures, saving each that can be text as .eont."
     val root = textRoundTrip.get().asFile
     val components = file("src/renderTest/components")
     val flexible = file("src/renderTest/flexible")
@@ -410,6 +409,15 @@ registerFlexibleRenders(
     dependsOn(convertFixturesThroughText)
     components = textRoundTrip.map { it.dir("flexible") }
 }
+// Replaces the flexible fixtures saved at the current card version with .eont
+// saves, except the filled spot checks. Older saves stay .eon.
+val migrateFixturesToText by tasks.registering(Exec::class) {
+    group = "render test"
+    description = "Converts current flexible .eon fixtures to .eont in src/renderTest/flexible."
+    val work = layout.buildDirectory.dir("render-test/migrate").get().asFile
+    runFixtureScript("migrate", work, work, flexibleInput = file("src/renderTest/flexible"))
+}
+
 tasks.register("verifyTextRoundTrips") {
     group = "render test"
     description = "Fails if any fixture renders differently after a save and read as text."
@@ -478,6 +486,8 @@ tasks.named("check") { dependsOn(verifyDefaults, "verifyFlexibleRenders", "verif
 listOf(
     RenderComponents::class, VerifyRenders::class, UpdateRenderMasters::class, StageFlexibleRenders::class,
 ).forEach { type -> tasks.withType(type).configureEach { dependsOn(checkRenderTestSources) } }
-listOf(generateFixtures, dumpDefaults, verifyDefaults, updateDefaults, convertFixturesThroughText).forEach {
+listOf(
+    generateFixtures, dumpDefaults, verifyDefaults, updateDefaults, convertFixturesThroughText, migrateFixturesToText,
+).forEach {
     it.configure { dependsOn(checkRenderTestSources) }
 }
