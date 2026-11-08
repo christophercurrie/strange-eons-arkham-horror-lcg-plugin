@@ -2,8 +2,10 @@ name: Bundles
 
 on:
   push:
-    branches: ['**']
-    tags: ['v*']
+    branches: [main]
+    # release versions (10.0, 10.0.1); -SNAPSHOT versions are never tagged
+    tags: ['[0-9]+.[0-9]+', '[0-9]+.[0-9]+.[0-9]+']
+  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -28,9 +30,10 @@ jobs:
       - name: Build bundles
         run: ./gradlew bundles
 
-      # tags get a versioned release; branches get a rolling prerelease
-      # that is replaced on each commit
+      # tags get a versioned release; main gets a rolling prerelease
+      # that is replaced on each commit; other refs only build
       - name: Publish release
+        if: github.ref == 'refs/heads/main' || github.ref_type == 'tag'
         env:
           GH_TOKEN: ${{ github.token }}
           REF_TYPE: ${{ github.ref_type }}
@@ -41,8 +44,8 @@ jobs:
             title="$REF_NAME"
             flags=()
           else
-            tag="latest-${REF_NAME//\//-}"
-            title="Latest build ($REF_NAME)"
+            tag=latest-main
+            title="Latest build (main)"
             flags=(--prerelease)
             gh release delete "$tag" --cleanup-tag --yes || true
           fi
