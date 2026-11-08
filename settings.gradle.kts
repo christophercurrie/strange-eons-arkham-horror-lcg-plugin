@@ -1,4 +1,4 @@
-// Render-test build for the AHLCG plug-in. Strange Eons defaults to
+// Bundle and render-test build for the AHLCG plug-in. Strange Eons defaults to
 // ~/Projects/strange-eons; override with -PstrangeEonsDir. Pass
 // -PrenderTestPluginDir to build the render-test plug-in from a local checkout.
 pluginManagement {

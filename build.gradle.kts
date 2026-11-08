@@ -20,6 +20,23 @@ strangeEonsRenderTest {
     resolution = 300
 }
 
+val packageHdPluginFolder by tasks.registering(PackagePluginFolder::class) {
+    description = "Packages the HD templates plug-in folder into a bundle."
+    folder = file("ArkhamHorrorLCG/ArkhamHorrorLCGHD")
+    bundle = layout.buildDirectory.file("bundles/ArkhamHorrorLCGHD.seext")
+}
+
+// Release bundles; does not need Strange Eons or the src/renderTest submodule.
+val bundles by tasks.registering(Sync::class) {
+    group = "build"
+    description = "Collects the plug-in bundles into build/dist."
+    from(tasks.named<PackagePluginFolder>("packagePluginFolder").flatMap { it.bundle })
+    from(packageHdPluginFolder.flatMap { it.bundle })
+    into(layout.buildDirectory.dir("dist"))
+}
+
+tasks.named("assemble") { dependsOn(bundles) }
+
 val fixtureScript = file("src/renderTest/generate-fixtures.js")
 val amdScript = file("src/renderTest/amd-loader.js")
 
