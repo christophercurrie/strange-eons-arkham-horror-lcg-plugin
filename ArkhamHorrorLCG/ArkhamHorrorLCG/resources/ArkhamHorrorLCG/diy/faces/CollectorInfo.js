@@ -141,7 +141,34 @@ define(['faces/FaceUtils', 'se/imageutils', 'se/strings', 'se/java'], function (
         g.drawImage(image, t, null);
     }
 
-    function paintEncounterIcon(g, diy, sheet, face, portrait) {
+    // The custom icon portrait, set in the reference region, drawn scaled to
+    // region; its clip stays the reference so the editor fits new icons to it.
+    function paintCustomEncounterIcon(
+        g,
+        diy,
+        sheet,
+        portrait,
+        region,
+        reference
+    ) {
+        diy.settings.setRegion(ENCOUNTER_CLIP_KEY, reference);
+        var saved = g.getTransform();
+        try {
+            g.translate(region.x, region.y);
+            g.scale(
+                region.width / reference.width,
+                region.height / reference.height
+            );
+            g.translate(-reference.x, -reference.y);
+            portrait.paint(g, sheet.getRenderTarget());
+        } finally {
+            g.setTransform(saved);
+        }
+    }
+
+    // reference: the region a custom icon's scale is set against, or null to
+    // use this face's own
+    function paintEncounterIcon(g, diy, sheet, face, portrait, reference) {
         var settings = diy.settings;
         var name = String(settings.get('Encounter', ''));
         var custom = String(settings.get('EncounterType', '0')) !== '0';
@@ -179,9 +206,14 @@ define(['faces/FaceUtils', 'se/imageutils', 'se/strings', 'se/java'], function (
         } else {
             // portrait clips are whole pixels
             let region = face.collectorRegion(diy, 'EncounterIcon');
-            // the portrait applies its scale and pan within its clip region
-            settings.setRegion(ENCOUNTER_CLIP_KEY, region);
-            portrait.paint(g, sheet.getRenderTarget());
+            paintCustomEncounterIcon(
+                g,
+                diy,
+                sheet,
+                portrait,
+                region,
+                reference || region
+            );
         }
     }
 
@@ -251,7 +283,14 @@ define(['faces/FaceUtils', 'se/imageutils', 'se/strings', 'se/java'], function (
         } else x -= 21;
 
         if (encounterIcon)
-            paintEncounterIcon(g, diy, sheet, face, collector.encounter);
+            paintEncounterIcon(
+                g,
+                diy,
+                sheet,
+                face,
+                collector.encounter,
+                collector.encounterReference
+            );
 
         if (
             encounterNumber !== false &&
@@ -285,7 +324,14 @@ define(['faces/FaceUtils', 'se/imageutils', 'se/strings', 'se/java'], function (
     }
 
     function paintEncounterIconOnly(g, diy, sheet, face, collector) {
-        paintEncounterIcon(g, diy, sheet, face, collector.encounter);
+        paintEncounterIcon(
+            g,
+            diy,
+            sheet,
+            face,
+            collector.encounter,
+            collector.encounterReference
+        );
     }
 
     return {

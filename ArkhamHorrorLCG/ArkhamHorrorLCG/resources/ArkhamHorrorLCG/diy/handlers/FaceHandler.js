@@ -165,6 +165,23 @@ define([
         return index < 0 ? null : this.portraits[index];
     };
 
+    // The region a custom encounter icon's scale is set against: the front's
+    // icon region, or the back's when the front has none. Other faces draw
+    // the icon scaled from it to their own region.
+    FaceHandler.prototype.encounterReference = function (diy) {
+        for (var i = FACE_FRONT; i <= FACE_BACK; i++) {
+            let face = this.faces[i];
+            if (
+                face != null &&
+                diy.settings.get(
+                    face.key(diy.settings, 'EncounterIcon-region')
+                ) != null
+            )
+                return face.collectorRegion(diy, 'EncounterIcon');
+        }
+        return null;
+    };
+
     FaceHandler.prototype.createPortrait = function (diy, kind) {
         var portrait = new DefaultPortrait(diy, 'AHLCG-Face-' + kind, true);
         portrait.facesToUpdate = [FACE_FRONT, FACE_BACK];
@@ -646,6 +663,7 @@ define([
             {
                 collection: this.findPortrait('Collection'),
                 encounter: this.findPortrait('Encounter'),
+                encounterReference: this.encounterReference(diy),
                 suffix:
                     bothShow &&
                     this.showsCollectionNumber(FACE_FRONT) &&
